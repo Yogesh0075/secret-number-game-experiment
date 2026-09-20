@@ -19,14 +19,14 @@ ROUND_TIERS = ("easy", "medium", "hard")
 # groups from solving the number in round 1 just because 15 clues were dealt.
 ROUND_FLOOR_FRACTIONS = (0.15, 0.05, 0.02)
 BLUFFS_PER_PLAYER = 1
-# Trust vote scoring. Pointing at an honest player pays both of you; a bluff
+# Trust-choice scoring. Trusting an honest player pays both of you; a bluff
 # pays the bluffer double for every player it fools, but a flop costs a point.
-TRUST_POINTS = 1      # to an honest player for each player who pointed at them
-GOOD_READ_POINTS = 1  # to a player who pointed at an honest player
-FOOLED_POINTS = 2     # to a bluffer for each player who pointed at them
-FLOP_PENALTY = 1      # a bluffer nobody pointed at loses this
+TRUST_POINTS = 1      # to an honest player for each player who trusted them
+GOOD_READ_POINTS = 1  # to a player who trusted an honest player
+FOOLED_POINTS = 2     # to a bluffer for each player who trusted them
+FLOP_PENALTY = 1      # a bluffer nobody trusted loses this
 OPTION_COUNT = 5
-MIN_PLAYERS, MAX_PLAYERS = 3, 20
+MIN_PLAYERS, MAX_PLAYERS = 2, 20
 
 
 # --------------------------------------------------------------------------
@@ -52,6 +52,22 @@ def digit_sum(k: int) -> int:
     return sum(int(c) for c in str(k))
 
 
+def digit_product(k: int) -> int:
+    product = 1
+    for c in str(k):
+        product *= int(c)
+    return product
+
+
+def has_digit(k: int, digit: int) -> bool:
+    return str(digit) in str(k)
+
+
+def is_palindrome(k: int) -> bool:
+    text = str(k)
+    return text == text[::-1]
+
+
 def is_prime(k: int) -> bool:
     if k < 2:
         return False
@@ -72,64 +88,114 @@ def _clamp(v: int, a: int, b: int) -> int:
 # --------------------------------------------------------------------------
 def _under(rng, lo, hi, n):
     x = _clamp(n + rng.randint(-25, 25), lo + 1, hi + 1)
-    return f"It's under {x}", lambda k: k < x
+    return f"This number is less than {x}", lambda k: k < x
 
 
 def _over(rng, lo, hi, n):
     x = _clamp(n + rng.randint(-25, 25), lo - 1, hi - 1)
-    return f"It's over {x}", lambda k: k > x
+    return f"This number is more than {x}", lambda k: k > x
 
 
 def _parity(rng, lo, hi, n):
     p = rng.choice((0, 1))
-    return ("It's even" if p == 0 else "It's odd"), lambda k: k % 2 == p
+    return ("This is an even number" if p == 0 else "This is an odd number"), lambda k: k % 2 == p
+
+
+def _range_third(rng, lo, hi, n):
+    zone = rng.randrange(3)
+    size = hi - lo + 1
+    start = lo + zone * size // 3
+    end = hi if zone == 2 else lo + (zone + 1) * size // 3 - 1
+    labels = ("lower", "middle", "upper")
+    return (
+        f"It is in the {labels[zone]} part of the range, between {start} and {end}",
+        lambda k: start <= k <= end,
+    )
+
+
+def _digit_count(rng, lo, hi, n):
+    count = rng.choice((1, 2, 3))
+    noun = "digit" if count == 1 else "digits"
+    return f"This number has {count} {noun}", lambda k: len(str(k)) == count
+
+
+def _contains_digit(rng, lo, hi, n):
+    digit = n % 10 if rng.random() < 0.45 else rng.randint(0, 9)
+    return f"The digit {digit} appears in this number", lambda k: has_digit(k, digit)
+
+
+def _near_multiple(rng, lo, hi, n):
+    multiple = rng.choice((5, 10, 15, 20, 25))
+    distance = rng.choice((1, 2, 3))
+    return (
+        f"It is within {distance} of a multiple of {multiple}",
+        lambda k: min(k % multiple, multiple - (k % multiple)) <= distance,
+    )
 
 
 def _between(rng, lo, hi, n):
     a = _clamp(n + rng.randint(-15, 10), lo, hi - 5)
     b = _clamp(a + rng.randint(8, 25), a + 5, hi)
-    return f"It's between {a} and {b}", lambda k: a <= k <= b
+    return f"This number is between {a} and {b}", lambda k: a <= k <= b
 
 
 def _last_digit(rng, lo, hi, n):
     d = n % 10 if rng.random() < 0.5 else rng.randint(0, 9)
-    return f"It ends in {d}", lambda k: k % 10 == d
+    return f"The last digit is {d}", lambda k: k % 10 == d
 
 
 def _first_digit(rng, lo, hi, n):
     d = _clamp(int(str(n)[0]) + rng.randint(-1, 1), 1, 9)
-    return f"Its first digit is {d}", lambda k: int(str(k)[0]) == d
+    return f"The first digit is {d}", lambda k: int(str(k)[0]) == d
 
 
 def _divisible(rng, lo, hi, n):
     m = rng.choice((2, 3, 4, 5, 6, 7, 9))
     if rng.random() < 0.5:
-        return f"It's divisible by {m}", lambda k: k % m == 0
-    return f"It's NOT divisible by {m}", lambda k: k % m != 0
+        return f"It can be divided equally by {m}", lambda k: k % m == 0
+    return f"It cannot be divided equally by {m}", lambda k: k % m != 0
+
+
+def _remainder(rng, lo, hi, n):
+    divisor = rng.choice((3, 4, 5, 6, 7, 8, 9))
+    remainder = rng.randrange(divisor)
+    return (
+        f"When divided by {divisor}, {remainder} is left over",
+        lambda k: k % divisor == remainder,
+    )
+
+
+def _tens_neighborhood(rng, lo, hi, n):
+    center = _clamp((n // 10) * 10 + rng.choice((-10, 0, 10)), lo, hi)
+    width = rng.choice((5, 8, 12))
+    return (
+        f"It is close to {center}: within {width}",
+        lambda k: abs(k - center) <= width,
+    )
 
 
 def _digit_sum_eq(rng, lo, hi, n):
     s = max(1, digit_sum(n) + rng.randint(-3, 3))
-    return f"Its digits add up to {s}", lambda k: digit_sum(k) == s
+    return f"Add its digits together: the total is {s}", lambda k: digit_sum(k) == s
 
 
 def _digit_sum_cmp(rng, lo, hi, n):
     s = max(2, digit_sum(n) + rng.randint(-4, 4))
     if rng.random() < 0.5:
-        return f"Its digits add up to more than {s}", lambda k: digit_sum(k) > s
-    return f"Its digits add up to less than {s}", lambda k: digit_sum(k) < s
+        return f"Adding its digits gives more than {s}", lambda k: digit_sum(k) > s
+    return f"Adding its digits gives less than {s}", lambda k: digit_sum(k) < s
 
 
 def _prime(rng, lo, hi, n):
     if rng.random() < 0.5:
-        return "It's a prime number", is_prime
-    return "It's NOT a prime number", lambda k: not is_prime(k)
+        return "This is a prime number", is_prime
+    return "This is not a prime number", lambda k: not is_prime(k)
 
 
 def _digit_gap(rng, lo, hi, n):
     d = _clamp(abs(n // 10 % 10 - n % 10) + rng.randint(-2, 2), 0, 9)
     return (
-        f"Its two digits differ by {d}",
+        f"The difference between its two digits is {d}",
         lambda k: 10 <= k <= 99 and abs(k // 10 - k % 10) == d,
     )
 
@@ -137,19 +203,60 @@ def _digit_gap(rng, lo, hi, n):
 def _last_vs_first(rng, lo, hi, n):
     if rng.random() < 0.5:
         return (
-            "Its last digit is bigger than its first digit",
+            "The last digit is bigger than the first digit",
             lambda k: k >= 10 and k % 10 > int(str(k)[0]),
         )
     return (
-        "Its last digit is smaller than its first digit",
+        "The last digit is smaller than the first digit",
         lambda k: k >= 10 and k % 10 < int(str(k)[0]),
     )
 
 
+def _digit_product(rng, lo, hi, n):
+    product = max(0, digit_product(n) + rng.randint(-8, 8))
+    return f"Multiply its digits: you get {product}", lambda k: digit_product(k) == product
+
+
+def _palindrome(rng, lo, hi, n):
+    if rng.random() < 0.5:
+        return "It looks the same when read from either side", is_palindrome
+    return "It looks different when read from either side", lambda k: not is_palindrome(k)
+
+
+def _same_or_different_digits(rng, lo, hi, n):
+    if rng.random() < 0.5:
+        return (
+            "The last two digits are the same",
+            lambda k: k >= 10 and str(k)[-1] == str(k)[-2],
+        )
+    return (
+        "The last two digits are different",
+        lambda k: k >= 10 and str(k)[-1] != str(k)[-2],
+    )
+
+
+def _square_neighbor(rng, lo, hi, n):
+    square = rng.choice(tuple(x * x for x in range(1, math.isqrt(hi) + 1)))
+    distance = rng.choice((1, 2, 3, 4))
+    return (
+        f"It is within {distance} of {square}, which is a square number",
+        lambda k: abs(k - square) <= distance,
+    )
+
+
 TEMPLATES = {
-    "easy": (_under, _over, _parity),
-    "medium": (_between, _last_digit, _first_digit, _divisible),
-    "hard": (_digit_sum_eq, _digit_sum_cmp, _prime, _digit_gap, _last_vs_first),
+    "easy": (
+        _under, _over, _parity, _range_third, _digit_count, _contains_digit,
+        _near_multiple,
+    ),
+    "medium": (
+        _between, _last_digit, _first_digit, _divisible, _remainder,
+        _tens_neighborhood,
+    ),
+    "hard": (
+        _digit_sum_eq, _digit_sum_cmp, _prime, _digit_gap, _last_vs_first,
+        _digit_product, _palindrome, _same_or_different_digits, _square_neighbor,
+    ),
 }
 
 
@@ -176,10 +283,10 @@ def make_clue(secret, tier, want_true, rng, lo, hi, avoid=()):
     return None
 
 
-def _deal_round(secret, n_players, tier, possible, floor, rng, lo, hi, known):
-    """Deal one true clue per player, keeping >= `floor` numbers possible."""
+def _deal_round(secret, n_players, tier, possible, floor, rng, lo, hi, seen_texts):
+    """Deal fresh true clues while keeping at least `floor` candidates if possible."""
     cur = set(possible)
-    clues, used = [], set()
+    clues, used = [], set(seen_texts)
     for _ in range(n_players):
         chosen = None
         for _attempt in range(60):
@@ -187,14 +294,24 @@ def _deal_round(secret, n_players, tier, possible, floor, rng, lo, hi, known):
             if c is None:
                 break
             new = cur & c.matches
-            if floor <= len(new) < len(cur):  # informative, but not too much
+            if floor <= len(new) < len(cur):
                 chosen = c
                 break
         if chosen is None:
-            # Nothing useful fits without over-shrinking the pool: repeat a
-            # clue the group already knows (it can only agree with `cur`).
-            pool = known + clues
-            chosen = rng.choice(pool) if pool else make_clue(secret, tier, True, rng, lo, hi)
+            # An unusual combination of clues may leave no fresh clue that
+            # meets the floor. Still prefer a new card and lose as little of
+            # the candidate pool as possible rather than repeat earlier text.
+            best, best_possible = None, set()
+            for _attempt in range(300):
+                c = make_clue(secret, tier, True, rng, lo, hi, avoid=used)
+                if c is None:
+                    break
+                new = cur & c.matches
+                if len(new) > len(best_possible):
+                    best, best_possible = c, new
+            if best is None:
+                raise RuntimeError("could not create a fresh clue")
+            chosen = best
         clues.append(chosen)
         used.add(chosen.text)
         cur &= chosen.matches
@@ -240,8 +357,8 @@ class Game:
     options: list
     bluffs_left: dict = field(default_factory=dict)
     bluffed: list = field(default_factory=list)       # per round: set of players
-    votes: list = field(default_factory=list)         # per round: {pointer: target}
-    fingers: list = field(default_factory=list)       # per round: {player: times pointed at}
+    votes: list = field(default_factory=list)         # per round: {player: trusted player | None}
+    fingers: list = field(default_factory=list)       # per round: {player: times trusted}
     round_points: list = field(default_factory=list)  # per round: {player: int}
     picks: dict = field(default_factory=dict)
 
@@ -277,21 +394,26 @@ class Game:
 
     # ----- trust vote scoring -----
     def score_round(self, r: int, votes: dict) -> dict:
-        """Score one round from who pointed at whom ({pointer: target}).
+        """Score one round from trust choices ({player: trusted player | None}).
 
         Honest target: target +1, pointer +1. Bluffing target: bluffer +2 per
-        player fooled. A bluffer nobody pointed at loses 1.
+        player fooled. A bluffer nobody trusted loses 1. In a two-player game,
+        ``None`` means "I think the other player is bluffing."
         """
         if len(self.votes) > r:
             raise ValueError("round already scored")
         if set(votes) != set(self.players):
-            raise ValueError("every player must point at someone")
+            raise ValueError("every player must make a trust choice")
         for pointer, target in votes.items():
+            if target is None and len(self.players) == 2:
+                continue
             if target not in self.players or target == pointer:
-                raise ValueError(f"{pointer} must point at another player")
+                raise ValueError(f"{pointer} must trust another player")
         pts = {p: 0 for p in self.players}
         received = {p: 0 for p in self.players}
         for pointer, target in votes.items():
+            if target is None:
+                continue
             received[target] += 1
             if target in self.bluffed[r]:
                 pts[target] += FOOLED_POINTS
@@ -347,24 +469,29 @@ def new_game(players, seed=None, lo=1, hi=100) -> Game:
     floors = [max(2, round(size * f)) for f in ROUND_FLOOR_FRACTIONS]
 
     possible = frozenset(range(lo, hi + 1))
-    known, clues, fakes, possible_after, speak_orders = [], [], [], [], []
+    clues, fakes, possible_after, speak_orders = [], [], [], []
+    seen_texts = set()
     for r, tier in enumerate(ROUND_TIERS):
         dealt, possible = _deal_round(
-            secret, len(players), tier, possible, floors[r], rng, lo, hi, known
+            secret, len(players), tier, possible, floors[r], rng, lo, hi, seen_texts
         )
-        known.extend(dealt)
+        seen_texts.update(c.text for c in dealt)
         order = players[:]
         rng.shuffle(order)  # so the first-listed player isn't always first
         clues.append(dict(zip(order, dealt)))
 
-        taken = {c.text for c in dealt}
+        taken = set(seen_texts)
         fake_map = {}
         for p in players:
             f = make_clue(secret, tier, False, rng, lo, hi, avoid=taken)
             for alt in (t for t in ROUND_TIERS if f is None):
                 f = make_clue(secret, alt, False, rng, lo, hi, avoid=taken)
+            if f is None:
+                raise RuntimeError("could not create a fresh bluff clue")
             fake_map[p] = f
+            taken.add(f.text)
         fakes.append(fake_map)
+        seen_texts.update(f.text for f in fake_map.values())
         possible_after.append(possible)
         speak = players[:]
         rng.shuffle(speak)

@@ -48,6 +48,18 @@ def test_options():
         assert all(g.low <= x <= g.high for x in o)
 
 
+def test_clue_card_text_never_repeats():
+    """A player should never receive the same clue card twice in one game."""
+    for seed in range(500):
+        g = ge.new_game(names(15), seed=seed, hi=(50, 100, 200)[seed % 3])
+        card_text = [
+            clue.text
+            for r in range(ge.ROUNDS)
+            for clue in (*g.clues[r].values(), *g.fakes[r].values())
+        ]
+        assert len(card_text) == len(set(card_text)), "clue cards must be unique per game"
+
+
 def test_scoring_bands():
     assert ge.points_for_guess(47, 47) == 5
     assert ge.points_for_guess(47, 52) == 3
@@ -89,6 +101,15 @@ def test_flop_penalty_and_vote_validation():
         raise AssertionError(f"should reject {bad}")
 
 
+def test_two_player_game_and_bluff_call():
+    g = ge.new_game(names(2), seed=12)
+    assert ge.bluff_cap(2) == 1
+    assert g.use_bluff(0, "P1")
+    points = g.score_round(0, {"P1": "P2", "P2": None})
+    # P1 trusts honest P2 (+1), but P2 calls P1's bluff, so it flops (-1).
+    assert points == {"P1": 0, "P2": 1}
+
+
 def test_bluff_can_beat_honesty():
     """A bluff that fools people out-earns the same votes going to an honest player."""
     g = ge.new_game(names(5), seed=5)
@@ -113,7 +134,8 @@ def test_full_game_flow_and_winner():
 
 
 def test_validation():
-    for bad in (["A", "B"], ["A", "A", "B"], ["A", "", "C"]):
+    assert ge.new_game(["A", "B"], seed=1)
+    for bad in (["A"], ["A", "A"], ["A", ""]):
         try:
             ge.new_game(bad)
         except ValueError:

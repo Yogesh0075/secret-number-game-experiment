@@ -54,8 +54,13 @@ def screen_login():
 def screen_setup():
     st.title("The Secret Number")
     st.write(
-        "One secret number. Everyone gets private clues, says something about "
-        "theirs, and can bluff once. Vote on who to trust, then guess the number."
+        "Work out one secret number together—but watch out, because one clue "
+        "may be a bluff."
+    )
+    st.info(
+        "How it works: read your private clue, describe it without reading it "
+        "word-for-word, decide whose clue you believe, and then make your final guess. "
+        "Each player can bluff once in the whole game."
     )
     with st.form("setup"):
         count = st.slider("Players", ge.MIN_PLAYERS, 15, 5)
@@ -127,8 +132,9 @@ def screen_speak():
     round_caption()
     st.header("Say it")
     st.write(
-        "In this order, each player says one sentence about their clue in their "
-        "own words. No exact numbers. Honest or bluffing, your call."
+        "When your name appears, explain the idea of your clue in your own words. "
+        "Do not read the card word-for-word or reveal the exact number from it. "
+        "If you chose to bluff, make your false clue sound believable."
     )
     for i, name in enumerate(g.speak_orders[r], 1):
         st.write(f"{i}. {name}")
@@ -139,30 +145,52 @@ def screen_speak():
 def screen_point():
     g, r = S.game, S.round
     round_caption()
-    st.header("Point!")
-    st.write(
-        "On 3, 2, 1, everyone points at the one other player they trust most. "
-        "Then record who each player pointed at."
-    )
+    two_players = len(g.players) == 2
+    st.header("Who do you believe?")
+    if two_players:
+        st.write(
+            "Each player now decides whether the other person's clue sounds true "
+            "or like a bluff. Keep your decision private until both choices are entered."
+        )
+    else:
+        st.write(
+            "Each player quietly chooses the one person whose clue sounds most believable. "
+            "Do not discuss your choices before everyone has decided."
+        )
     st.caption(
-        "Pointing at an honest player pays you both. A bluff pays its owner double "
-        "for every player it fools, but costs a point if nobody falls for it."
+        "Trust an honest clue: you both get +1. Trust a bluff: the bluffer gets +2. "
+        "If nobody trusts a bluffer, they lose 1 point."
     )
     with st.form(f"point_{S.gid}_{r}"):
-        picks = {
-            p: st.selectbox(
-                f"{p} pointed at",
-                [q for q in g.players if q != p],
-                index=None,
-                placeholder="Choose a player",
-                key=f"pt_{S.gid}_{r}_{p}",
-            )
-            for p in g.players
-        }
+        picks = {}
+        decisions_recorded = {}
+        for p in g.players:
+            others = [q for q in g.players if q != p]
+            if two_players:
+                trust_choice = f"I trust {others[0]}'s clue"
+                choice = st.selectbox(
+                    f"{p}'s decision",
+                    [trust_choice, "I think they are bluffing"],
+                    index=None,
+                    placeholder="Choose privately",
+                    key=f"pt_{S.gid}_{r}_{p}",
+                )
+                picks[p] = others[0] if choice == trust_choice else None
+                decisions_recorded[p] = choice is not None
+            else:
+                picks[p] = st.selectbox(
+                    f"{p} believes",
+                    others,
+                    index=None,
+                    placeholder="Choose a player",
+                    key=f"pt_{S.gid}_{r}_{p}",
+                )
         go = st.form_submit_button("Reveal", type="primary", use_container_width=True)
     if go:
-        if any(v is None for v in picks.values()):
-            st.error("Choose who every player pointed at.")
+        if not two_players and any(v is None for v in picks.values()):
+            st.error("Choose the clue each player believes.")
+        elif two_players and not all(decisions_recorded.values()):
+            st.error("Record a decision for both players.")
         else:
             g.score_round(r, picks)
             goto("reveal")
@@ -186,7 +214,7 @@ def screen_reveal():
         [
             {
                 "Player": p,
-                "Pointed at": g.votes[r][p],
+                "Trusted": g.votes[r][p] or "Nobody (called bluff)",
                 "Trusted by": g.fingers[r][p],
                 "Points": g.round_points[r][p],
                 "Said": "bluff" if p in bl else "honest",

@@ -1,22 +1,27 @@
 # The Secret Number
 
-Pass-and-play party game for 3-15 players on one phone. One secret number,
+Pass-and-play party game for 2-15 players on one phone. One secret number,
 three rounds of private clues (easy, medium, hard), one spoken sentence each,
 a one-time bluff per player, a trust vote by pointing, then a final
 multiple-choice guess. Closer guesses score more.
 
 ## Scoring
 
-- **Trust vote:** everyone points at the one other player they trust most.
-  Point at an honest player and you both score 1.
+- **Trust choice:** everyone chooses the one other player they trust most.
+  Trust an honest player and you both score 1.
+- **Two-player trust choice:** each person either trusts the other clue or
+  calls it a bluff. Calling a bluff scores no points, but can make a bluff flop.
 - **Bluff:** a bluffer scores 2 for every player it fools. If nobody points
   at a bluffer, it loses 1. So bluffing pays when you're convincing.
 - **Final guess:** exact 5, within 5 scores 3, within 10 scores 1.
 - Bluffs: one per player per game, and at most about a third of the table can
   bluff in the same round.
 
-All clues come from plain Python templates (`game_engine.py`). No AI is used
-for anything that affects correctness.
+All clues come from plain Python templates (`game_engine.py`). The clue bank
+mixes ranges, digit patterns, multiples and remainders, prime checks,
+palindromes, and nearby square numbers. No AI is used for anything that
+affects correctness. A clue card's exact text is used only once per game,
+including bluff cards.
 
 The landing screen asks for a simple username. It is not a password-protected
 account and is stored only for the current browser session.
