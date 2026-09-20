@@ -437,6 +437,23 @@ class Game:
     def trust_points(self) -> dict:
         return {p: sum(rp[p] for rp in self.round_points) for p in self.players}
 
+    def good_reads(self) -> dict:
+        """How often each player trusted an honest clue."""
+        reads = {p: 0 for p in self.players}
+        for r, round_votes in enumerate(self.votes):
+            for player, target in round_votes.items():
+                if target is not None and target not in self.bluffed[r]:
+                    reads[player] += 1
+        return reads
+
+    def bluff_fools(self) -> dict:
+        """How many opponents trusted each player's bluff across the game."""
+        fooled = {p: 0 for p in self.players}
+        for r, bluffers in enumerate(self.bluffed):
+            for player in bluffers:
+                fooled[player] += self.fingers[r][player] if len(self.fingers) > r else 0
+        return fooled
+
     def guess_points(self) -> dict:
         return {p: points_for_guess(self.secret, self.picks[p]) for p in self.picks}
 

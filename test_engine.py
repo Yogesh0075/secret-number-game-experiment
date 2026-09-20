@@ -131,6 +131,8 @@ def test_full_game_flow_and_winner():
     assert totals["P3"] >= 5 + 3  # exact guess + trust and good-read points
     assert g.leaderboard()[0][1] == max(totals.values())
     assert g.winners()
+    assert g.good_reads() == {p: ge.ROUNDS for p in g.players}
+    assert g.bluff_fools() == {p: 0 for p in g.players}
 
 
 def test_validation():

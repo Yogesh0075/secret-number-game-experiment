@@ -26,6 +26,10 @@ including bluff cards.
 The landing screen asks for a simple username. It is not a password-protected
 account and is stored only for the current browser session.
 
+The app includes a quick rules panel, short round-specific guidance, a
+plain-language explanation of each round's score change, and end-game awards
+for the sharpest reader and most convincing bluffer.
+
 ## Run it locally
 
     pip install -r requirements.txt

@@ -36,7 +36,38 @@ def start_game(players, hi):
 
 def round_caption():
     r = S.round
+    st.progress((r + 1) / ge.ROUNDS, text=f"Round {r + 1} of {ge.ROUNDS}")
     st.caption(f"Round {r + 1} of {ge.ROUNDS} · {ge.ROUND_TIERS[r]} clues")
+
+
+def round_mood(r):
+    return (
+        "Warm-up round: listen for the broad direction of each clue.",
+        "Getting closer: small details and patterns matter more now.",
+        "Final stretch: trust your instincts, but a convincing bluff can still fool you.",
+    )[r]
+
+
+def score_explanation(g, r, player):
+    """A human-friendly explanation of a player's round result."""
+    target = g.votes[r][player]
+    received = g.fingers[r][player]
+    parts = []
+    if target is None:
+        parts.append("called the other clue a bluff")
+    elif target in g.bluffed[r]:
+        parts.append("trusted a bluff")
+    else:
+        parts.append("trusted an honest clue (+1)")
+
+    if player in g.bluffed[r]:
+        if received:
+            parts.append(f"their bluff fooled {received} player{'s' if received != 1 else ''} (+{received * ge.FOOLED_POINTS})")
+        else:
+            parts.append("their bluff fooled nobody (-1)")
+    elif received:
+        parts.append(f"their honest clue was trusted by {received} player{'s' if received != 1 else ''} (+{received})")
+    return "; ".join(parts) + "."
 
 
 # ---------------------------------------------------------------- login ----
@@ -85,6 +116,8 @@ def screen_setup():
 def screen_clue_handoff():
     g, p = S.game, S.game.players[S.idx]
     round_caption()
+    st.info(round_mood(S.round))
+    st.subheader("Your private clue")
     st.write("Pass the phone to")
     st.markdown(f'<div class="who">{p}</div>', unsafe_allow_html=True)
     st.write("Everyone else, look away.")
@@ -107,15 +140,15 @@ def screen_clue_view():
     st.markdown(f'<div class="who">{p}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="clue">{clue.text}</div>', unsafe_allow_html=True)
     if S.bluffing:
-        st.write("Bluff on. Say this as if it were true. Nobody else knows.")
+        st.warning("Bluff active. Describe this clue as if it were true—only you know it is false.")
         if st.button("Hide and pass the phone", type="primary", use_container_width=True):
             next_after_clue()
         return
-    if st.button("Got it. Hide and pass", type="primary", use_container_width=True):
+    if st.button("I remember it — hide and pass", type="primary", use_container_width=True):
         next_after_clue()
     can = g.can_bluff(r, p)
     if st.button(
-        f"Use my bluff ({g.bluffs_left[p]} left)", disabled=not can, use_container_width=True
+        f"Swap this for my bluff ({g.bluffs_left[p]} left)", disabled=not can, use_container_width=True
     ):
         g.use_bluff(r, p)
         S.bluffing = True
@@ -123,7 +156,7 @@ def screen_clue_view():
     if not can:
         st.caption(g.bluff_block_reason(r, p))
     else:
-        st.caption("A bluff swaps in a false clue. You get one per game.")
+        st.caption("A bluff swaps this card for a false clue. You get one bluff for the whole game.")
 
 
 # ------------------------------------------------------------ talk/vote ----
@@ -226,6 +259,9 @@ def screen_reveal():
     )
     st.subheader("Trust points so far")
     st.dataframe(leaderboard_rows(g), hide_index=True, use_container_width=True)
+    with st.expander("Why did the scores change?"):
+        for p in g.players:
+            st.write(f"**{p}:** {score_explanation(g, r, p)}")
     last = r + 1 >= ge.ROUNDS
     if st.button("Final guess" if last else "Next round", type="primary", use_container_width=True):
         if last:
@@ -286,6 +322,21 @@ def screen_results():
         hide_index=True,
         use_container_width=True,
     )
+    reads, fools = g.good_reads(), g.bluff_fools()
+    best_reads = max(reads.values())
+    if best_reads:
+        detectives = [p for p, score in reads.items() if score == best_reads]
+        st.info(
+            "Sharpest reader: " + ", ".join(detectives) +
+            f" ({best_reads} honest clue{'s' if best_reads != 1 else ''} spotted)"
+        )
+    best_fools = max(fools.values())
+    if best_fools:
+        bluffers = [p for p, score in fools.items() if score == best_fools]
+        st.warning(
+            "Smooth talker: " + ", ".join(bluffers) +
+            f" ({best_fools} player{'s' if best_fools != 1 else ''} fooled)"
+        )
     with st.expander("Every clue, round by round"):
         for r, tier in enumerate(ge.ROUND_TIERS):
             st.markdown(f"**Round {r + 1} ({tier})**")
@@ -321,6 +372,10 @@ else:
         S.stage = "setup"
     with st.sidebar:
         st.caption(f"Playing as {tracking.current_user()}")
+        with st.expander("Quick rules"):
+            st.write("Keep your clue private. Explain it in your own words. You may bluff once.")
+            st.write("Trust an honest clue: both players get +1. Trust a bluff: the bluffer gets +2.")
+            st.write("Final guess: exact +5, within 5 +3, within 10 +1.")
         if S.stage != "setup" and st.button("End game"):
             goto("setup")
         if st.button("Change username"):
