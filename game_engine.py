@@ -59,15 +59,6 @@ def digit_product(k: int) -> int:
     return product
 
 
-def has_digit(k: int, digit: int) -> bool:
-    return str(digit) in str(k)
-
-
-def is_palindrome(k: int) -> bool:
-    text = str(k)
-    return text == text[::-1]
-
-
 def is_prime(k: int) -> bool:
     if k < 2:
         return False
@@ -101,35 +92,14 @@ def _parity(rng, lo, hi, n):
     return ("This is an even number" if p == 0 else "This is an odd number"), lambda k: k % 2 == p
 
 
-def _range_third(rng, lo, hi, n):
-    zone = rng.randrange(3)
-    size = hi - lo + 1
-    start = lo + zone * size // 3
-    end = hi if zone == 2 else lo + (zone + 1) * size // 3 - 1
-    labels = ("lower", "middle", "upper")
+def _wide_between(rng, lo, hi, n):
+    """An approachable first-round window of 20-30 nearby numbers."""
+    width = min(rng.choice((20, 25, 30)), hi - lo)
+    start = _clamp(n + rng.randint(-width + 1, 0), lo, hi - width + 1)
+    end = start + width - 1
     return (
-        f"It is in the {labels[zone]} part of the range, between {start} and {end}",
+        f"This number is between {start} and {end}",
         lambda k: start <= k <= end,
-    )
-
-
-def _digit_count(rng, lo, hi, n):
-    count = rng.choice((1, 2, 3))
-    noun = "digit" if count == 1 else "digits"
-    return f"This number has {count} {noun}", lambda k: len(str(k)) == count
-
-
-def _contains_digit(rng, lo, hi, n):
-    digit = n % 10 if rng.random() < 0.45 else rng.randint(0, 9)
-    return f"The digit {digit} appears in this number", lambda k: has_digit(k, digit)
-
-
-def _near_multiple(rng, lo, hi, n):
-    multiple = rng.choice((5, 10, 15, 20, 25))
-    distance = rng.choice((1, 2, 3))
-    return (
-        f"It is within {distance} of a multiple of {multiple}",
-        lambda k: min(k % multiple, multiple - (k % multiple)) <= distance,
     )
 
 
@@ -151,9 +121,7 @@ def _first_digit(rng, lo, hi, n):
 
 def _divisible(rng, lo, hi, n):
     m = rng.choice((2, 3, 4, 5, 6, 7, 9))
-    if rng.random() < 0.5:
-        return f"It can be divided equally by {m}", lambda k: k % m == 0
-    return f"It cannot be divided equally by {m}", lambda k: k % m != 0
+    return f"It can be divided equally by {m}", lambda k: k % m == 0
 
 
 def _remainder(rng, lo, hi, n):
@@ -179,17 +147,8 @@ def _digit_sum_eq(rng, lo, hi, n):
     return f"Add its digits together: the total is {s}", lambda k: digit_sum(k) == s
 
 
-def _digit_sum_cmp(rng, lo, hi, n):
-    s = max(2, digit_sum(n) + rng.randint(-4, 4))
-    if rng.random() < 0.5:
-        return f"Adding its digits gives more than {s}", lambda k: digit_sum(k) > s
-    return f"Adding its digits gives less than {s}", lambda k: digit_sum(k) < s
-
-
 def _prime(rng, lo, hi, n):
-    if rng.random() < 0.5:
-        return "This is a prime number", is_prime
-    return "This is not a prime number", lambda k: not is_prime(k)
+    return "This is a prime number", is_prime
 
 
 def _digit_gap(rng, lo, hi, n):
@@ -200,39 +159,9 @@ def _digit_gap(rng, lo, hi, n):
     )
 
 
-def _last_vs_first(rng, lo, hi, n):
-    if rng.random() < 0.5:
-        return (
-            "The last digit is bigger than the first digit",
-            lambda k: k >= 10 and k % 10 > int(str(k)[0]),
-        )
-    return (
-        "The last digit is smaller than the first digit",
-        lambda k: k >= 10 and k % 10 < int(str(k)[0]),
-    )
-
-
 def _digit_product(rng, lo, hi, n):
     product = max(0, digit_product(n) + rng.randint(-8, 8))
     return f"Multiply its digits: you get {product}", lambda k: digit_product(k) == product
-
-
-def _palindrome(rng, lo, hi, n):
-    if rng.random() < 0.5:
-        return "It looks the same when read from either side", is_palindrome
-    return "It looks different when read from either side", lambda k: not is_palindrome(k)
-
-
-def _same_or_different_digits(rng, lo, hi, n):
-    if rng.random() < 0.5:
-        return (
-            "The last two digits are the same",
-            lambda k: k >= 10 and str(k)[-1] == str(k)[-2],
-        )
-    return (
-        "The last two digits are different",
-        lambda k: k >= 10 and str(k)[-1] != str(k)[-2],
-    )
 
 
 def _square_neighbor(rng, lo, hi, n):
@@ -246,16 +175,14 @@ def _square_neighbor(rng, lo, hi, n):
 
 TEMPLATES = {
     "easy": (
-        _under, _over, _parity, _range_third, _digit_count, _contains_digit,
-        _near_multiple,
+        _under, _over, _parity, _wide_between,
     ),
     "medium": (
         _between, _last_digit, _first_digit, _divisible, _remainder,
         _tens_neighborhood,
     ),
     "hard": (
-        _digit_sum_eq, _digit_sum_cmp, _prime, _digit_gap, _last_vs_first,
-        _digit_product, _palindrome, _same_or_different_digits, _square_neighbor,
+        _digit_sum_eq, _prime, _digit_gap, _digit_product, _square_neighbor,
     ),
 }
 
@@ -301,11 +228,16 @@ def _deal_round(secret, n_players, tier, possible, floor, rng, lo, hi, seen_text
             # An unusual combination of clues may leave no fresh clue that
             # meets the floor. Still prefer a new card and lose as little of
             # the candidate pool as possible rather than repeat earlier text.
+            # At this point a fresh clue from another difficulty is better
+            # than a duplicate or a broken game, especially near range edges.
             best, best_possible = None, set()
+            fallback_tiers = (tier,) + tuple(t for t in ROUND_TIERS if t != tier)
             for _attempt in range(300):
-                c = make_clue(secret, tier, True, rng, lo, hi, avoid=used)
+                c = make_clue(
+                    secret, rng.choice(fallback_tiers), True, rng, lo, hi, avoid=used
+                )
                 if c is None:
-                    break
+                    continue
                 new = cur & c.matches
                 if len(new) > len(best_possible):
                     best, best_possible = c, new

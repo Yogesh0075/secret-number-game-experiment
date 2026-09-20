@@ -70,6 +70,16 @@ def score_explanation(g, r, player):
     return "; ".join(parts) + "."
 
 
+def confirmed_candidate_count(g, through_round):
+    """Count numbers matching the clue statements now known to be honest."""
+    candidates = set(range(g.low, g.high + 1))
+    for r in range(through_round + 1):
+        for player in g.players:
+            if player not in g.bluffed[r]:
+                candidates &= g.clues[r][player].matches
+    return len(candidates)
+
+
 # ---------------------------------------------------------------- login ----
 def screen_login():
     st.title("The Secret Number")
@@ -89,8 +99,8 @@ def screen_setup():
         "may be a bluff."
     )
     st.info(
-        "How it works: read your private clue, describe it without reading it "
-        "word-for-word, decide whose clue you believe, and then make your final guess. "
+        "How it works: read your private clue aloud without showing the card, "
+        "compare it with the other clues, decide whose clue you believe, and then make your final guess. "
         "Each player can bluff once in the whole game."
     )
     with st.form("setup"):
@@ -165,12 +175,28 @@ def screen_speak():
     round_caption()
     st.header("Say it")
     st.write(
-        "When your name appears, explain the idea of your clue in your own words. "
-        "Do not read the card word-for-word or reveal the exact number from it. "
-        "If you chose to bluff, make your false clue sound believable."
+        "When your name appears, read your clue exactly as it is written. "
+        "Do not show the card to anyone. If you chose to bluff, read the false "
+        "clue exactly the same way."
+    )
+    st.info(
+        "Listen for clues that fit together. If one statement does not match the "
+        "others, that player may be bluffing."
     )
     for i, name in enumerate(g.speak_orders[r], 1):
         st.write(f"{i}. {name}")
+    st.subheader("Evidence Board")
+    st.write(
+        "As each player reads their statement, one person writes it below. "
+        "The honest statements should all fit one number; a bluff points to a different answer."
+    )
+    st.text_area(
+        "Evidence Board",
+        height=120,
+        key=f"notes_{S.gid}",
+        placeholder="Example: More than 20; last digit 1; divides equally by 31.",
+    )
+    st.caption("Keep this board for the final guess. It is a player aid only; it never changes scoring or reveals the answer.")
     if st.button("Everyone has spoken", type="primary", use_container_width=True):
         goto("point")
 
@@ -191,8 +217,8 @@ def screen_point():
             "Do not discuss your choices before everyone has decided."
         )
     st.caption(
-        "Trust an honest clue: you both get +1. Trust a bluff: the bluffer gets +2. "
-        "If nobody trusts a bluffer, they lose 1 point."
+        "Choose the clue that best fits the group notes. Trust an honest clue: you both get +1. "
+        "Trust a bluff: the bluffer gets +2. If nobody trusts a bluffer, they lose 1 point."
     )
     with st.form(f"point_{S.gid}_{r}"):
         picks = {}
@@ -259,6 +285,11 @@ def screen_reveal():
     )
     st.subheader("Trust points so far")
     st.dataframe(leaderboard_rows(g), hide_index=True, use_container_width=True)
+    remaining = confirmed_candidate_count(g, r)
+    st.info(
+        f"Case update: the confirmed honest clues so far leave {remaining} "
+        f"possible number{'s' if remaining != 1 else ''}. Keep building the Evidence Board."
+    )
     with st.expander("Why did the scores change?"):
         for p in g.players:
             st.write(f"**{p}:** {score_explanation(g, r, p)}")
@@ -285,7 +316,15 @@ def screen_final_pick():
     p = g.players[S.idx]
     st.caption("Final guess")
     st.markdown(f'<div class="who">{p}</div>', unsafe_allow_html=True)
-    st.write("Which number is it? Closer picks score more.")
+    st.write("Use the clues your group collected. Which number fits them best?")
+    if S.get(f"notes_{S.gid}", "").strip():
+        st.text_area(
+            "Evidence Board",
+            value=S[f"notes_{S.gid}"],
+            height=120,
+            disabled=True,
+            key=f"final_notes_{S.gid}_{p}",
+        )
     choice = st.radio("Options", g.options, index=None, horizontal=True, key=f"pick_{S.gid}_{p}", label_visibility="collapsed")
     if st.button("Lock it in", type="primary", use_container_width=True, disabled=choice is None):
         g.submit_pick(p, choice)
@@ -373,7 +412,7 @@ else:
     with st.sidebar:
         st.caption(f"Playing as {tracking.current_user()}")
         with st.expander("Quick rules"):
-            st.write("Keep your clue private. Explain it in your own words. You may bluff once.")
+            st.write("Keep your clue card private, but read its text aloud. You may bluff once.")
             st.write("Trust an honest clue: both players get +1. Trust a bluff: the bluffer gets +2.")
             st.write("Final guess: exact +5, within 5 +3, within 10 +1.")
         if S.stage != "setup" and st.button("End game"):
